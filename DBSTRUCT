@@ -1,8 +1,19 @@
+====================
+Client side:
+
 Table 'devices'
 	Contains the list of wireless network devices that will be used
 	- name(varchar): name of network interface to use
+
+====================
+Server side:
 
 Table 'authorized'
 	The list of all authorized Wi-Fi APs. Action will be taken agains every AP detected not found in the table.
 	- name(varchar): Access Point SSID
 	- mac(varchar): Physical address of the Access Point in the format "aa:bb:cc:dd:ee:ff"
+
+Table 'apikeys'
+	List of client keys
+	- name(varchar): who/what this key belongs to
+	- key(varchar): the key itself

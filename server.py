@@ -1,3 +1,5 @@
+#!/usr/bin/python2
+
 ### EasiWIDS Central Server
 
 """
@@ -34,6 +36,7 @@ import ssl
 import json
 from urlparse import urlparse
 import sqlite3
+import urllib
 
 __apiversion__ = "v1"
 
@@ -84,8 +87,8 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 			return
 
 		
-
-		query = [elem.split('=') for elem in url.query.split('&')]
+		query = urllib.unquote(url.query)
+		query = [elem.split('=') for elem in query.split('&')]
 
 		queryd = {}
 		for elem in query:
@@ -171,6 +174,7 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 			response["result"]["verdict"] = "TERMINATE"
 		
 		self.wfile.write(json.dumps(response))
+		# TODO: log report
 
 httpd = BaseHTTPServer.HTTPServer(('0.0.0.0', 8080), EasiWIDSHTTPHandler)
 

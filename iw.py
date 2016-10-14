@@ -2,6 +2,9 @@ import subprocess
 import pcap
 import dpkt
 import os
+import time
+
+import client
 
 class IW:
 	def __init__(self, netif, authorized):
@@ -9,7 +12,7 @@ class IW:
 			return
 		self.netif = netif
 		self.authorized = authorized
-		self.detected = []
+		self.detected = {}
 		self.channel = 1
 		self.quit = False
 		self.DEVNULL = open(os.devnull, 'w')
@@ -46,10 +49,21 @@ class IW:
 				if parsed.type == 0 and parsed.subtype == 8:
 					src = ":".join("{:02x}".format(ord(c)) for c in parsed.mgmt.src)
 					t = (parsed.ssid.info, src)
+					ts = "%s-%s" % t
 					if t not in self.authorized:
-						if t not in self.detected:
-							self.detected.append(t)
+						if ts not in self.detected:
+							self.detected[ts] = {
+								"lastseen" : time.time(),
+								"lastreported" : time.time()
+							}
 							print("[netif %s] Unauthorized AP detected: %s" % (self.netif, str(t)))
+							self.report(t[0], src)
+						else:
+							te = self.detected[ts]
+							te["lastseen"] = time.time()
+							if te["lastseen"] - te["lastreported"] > 60:
+								self.report(t[0], src)
+							
 		except KeyboardInterrupt as e:
 			print("[netif %s] signal received, quitting" % (self.netif))
 			self.quit = True
@@ -59,3 +73,14 @@ class IW:
 	def close(self):
 		if subprocess.call(["airmon-ng", "stop", self.netif], stdout=self.DEVNULL, stderr=self.DEVNULL) != 0:
 			print("[netif %s] cannot deactivate monitor mode" % self.netif)
+
+	def report(self, name, mac):
+		sc = client.ServerClient()
+		csuc, rsuc, verdict, msg = sc.report(name, mac)
+		if not csuc:
+			print("[netif %s] Cannot connect to server: %s" % (self.netif, msg))
+		elif not rsuc:
+			print("[netif %s] Cannot report to server: %s" % (self.netif, msg))
+
+		if verdict:
+			print("[netif %s] Administering fatal verdict to %s" % (self.netif, name))
