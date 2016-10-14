@@ -1,5 +1,7 @@
-import pcap
-import dpkt
+import sqlite3
+import threading
+
+import iw
 
 """
 IEEE80211(framectl=32768, ssid=IE(len=8, info='TPLINK-M', data='TPLINK-M'), ie_42=IE(id=42, len=1, info='\x04', data='\x04'), 
@@ -39,17 +41,51 @@ ie_221=IE(id=221, len=24, info='\x00P\xf2\x04\x10J\x00\x01\x10\x10D\x00\x01\x02\
 \x10D\x00\x01\x02\x10I\x00\x06\x007*\x00\x01 \x97\xd4\xa5\xaa")
 """
 
-authorized_aps = [("TPLINK-M", "c4:12:f5:46:7f:9b")]
-detected_aps = []
+"""
+devices
+name
 
-pc = pcap.pcap("wlp0s29u1u6mon")
+authorized
+name | mac
+"""
 
-for timestamp, packet in pc:
-	parsed = dpkt.radiotap.Radiotap(packet).data
-	if parsed.type == 0 and parsed.subtype == 8:
-		src = ":".join("{:02x}".format(ord(c)) for c in parsed.mgmt.src)
-		t = (parsed.ssid.info, src)
-		if t not in authorized_aps:
-			if t not in detected_aps:
-				detected_aps.append(t)
-				print("Unauthorized AP detected: " + str(t))
+authorized_aps = []
+threads = []
+
+def netifthread(netif, authorized):
+	print("[netif %s] thread start" % netif)
+	iwif = iw.IW(netif, authorized)
+	timer = threading.Timer(0.250, netif_switchch, args=[iwif])
+	print("[netif %s] entering loop" % netif)
+	timer.start()
+	iwif.loop()
+
+def netif_switchch(*args):
+	iwobj = args[0]
+	newch = (iwobj.channel + 1) % 12
+	if newch == 0:
+		newch = 1
+	if not iwobj.set_channel(newch):
+		iwobj.set_channel(1)
+	if iwobj.quit:
+		return
+	threading.Timer(0.5, netif_switchch, args=args).start()
+
+dbconn = sqlite3.connect('config.db')
+
+c = dbconn.cursor()
+
+c.execute("CREATE TABLE IF NOT EXISTS devices(name varchar)")
+c.execute("CREATE TABLE IF NOT EXISTS authorized(name varchar, mac varchar)")
+
+for row in c.execute("SELECT name,mac FROM authorized"):
+	authorized_aps.append((row[0], row[1]))
+
+for row in c.execute("SELECT name FROM devices"):
+	t = threading.Thread(target=netifthread, args=(row[0], authorized_aps))
+	threads.append(t)
+
+	t.start()
+
+if len(threads) == 0:
+	print("No devices defined")
