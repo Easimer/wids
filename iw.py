@@ -1,6 +1,7 @@
 import subprocess
 import pcap
 import dpkt
+import os
 
 class IW:
 	def __init__(self, netif, authorized):
@@ -11,7 +12,8 @@ class IW:
 		self.detected = []
 		self.channel = 1
 		self.quit = False
-		if subprocess.call(["airmon-ng", "start", netif]) != 0:
+		self.DEVNULL = open(os.devnull, 'w')
+		if subprocess.call(["airmon-ng", "start", netif], stdout=self.DEVNULL, stderr=self.DEVNULL) != 0:
 			print("[netif %s] cannot set monitor mode" % (self.netif))
 			self.quit = True
 			return
@@ -21,7 +23,7 @@ class IW:
 		self.set_channel(1)
 
 	def set_channel(self, channel):
-		if subprocess.call(["iw", "dev", self.netif, "set", "channel", str(channel)]) != 0:
+		if subprocess.call(["iw", "dev", self.netif, "set", "channel", str(channel)], stdout=self.DEVNULL, stderr=self.DEVNULL) != 0:
 			print("[netif %s] cannot set channel to %d" % (self.netif, channel))
 			return False
 		self.channel = channel
@@ -45,7 +47,11 @@ class IW:
 							self.authorized.append(t)
 							print("Unauthorized AP detected: " + str(t))
 		except:
-			self.quit = True
 			print("[netif %s] interrupted, quitting" % self.netif)
+			self.quit = True
+			self.close()
 			return
 			
+	def close(self):
+		if subprocess.call(["airmon-ng", "stop", self.netif], stdout=self.DEVNULL, stderr=self.DEVNULL) != 0:
+			print("[netif %s] cannot deactivate monitor mode" % self.netif)
