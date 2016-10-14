@@ -27,7 +27,7 @@ class IW:
 			print("[netif %s] cannot set channel to %d" % (self.netif, channel))
 			return False
 		self.channel = channel
-		print("[netif %s] set channel to %d" % (self.netif, channel))
+		#print("[netif %s] set channel to %d" % (self.netif, channel))
 		return True
 			
 
@@ -38,7 +38,11 @@ class IW:
 			for timestamp, packet in pc:
 				if self.quit:
 					break
-				parsed = dpkt.radiotap.Radiotap(packet).data
+				parsed = None
+				try:
+					parsed = dpkt.radiotap.Radiotap(packet).data
+				except dpkt.dpkt.NeedData:
+					continue
 				if parsed.type == 0 and parsed.subtype == 8:
 					src = ":".join("{:02x}".format(ord(c)) for c in parsed.mgmt.src)
 					t = (parsed.ssid.info, src)
@@ -46,8 +50,8 @@ class IW:
 						if t not in self.detected:
 							self.detected.append(t)
 							print("[netif %s] Unauthorized AP detected: %s" % (self.netif, str(t)))
-		except:
-			print("[netif %s] interrupted, quitting" % self.netif)
+		except KeyboardInterrupt as e:
+			print("[netif %s] signal received, quitting" % (self.netif))
 			self.quit = True
 			self.close()
 			return
