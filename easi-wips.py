@@ -41,14 +41,6 @@ ie_221=IE(id=221, len=24, info='\x00P\xf2\x04\x10J\x00\x01\x10\x10D\x00\x01\x02\
 \x10D\x00\x01\x02\x10I\x00\x06\x007*\x00\x01 \x97\xd4\xa5\xaa")
 """
 
-"""
-devices
-name
-
-authorized
-name | mac
-"""
-
 authorized_aps = []
 threads = []
 
@@ -71,21 +63,22 @@ def netif_switchch(*args):
 		return
 	threading.Timer(0.5, netif_switchch, args=args).start()
 
-dbconn = sqlite3.connect('config.db')
+if __name__ == "__main__":
+	dbconn = sqlite3.connect('config.db')
 
-c = dbconn.cursor()
+	c = dbconn.cursor()
 
-c.execute("CREATE TABLE IF NOT EXISTS devices(name varchar)")
-c.execute("CREATE TABLE IF NOT EXISTS authorized(name varchar, mac varchar)")
+	c.execute("CREATE TABLE IF NOT EXISTS devices(name varchar)")
+	c.execute("CREATE TABLE IF NOT EXISTS authorized(name varchar, mac varchar)")
 
-for row in c.execute("SELECT name,mac FROM authorized"):
-	authorized_aps.append((row[0], row[1]))
+	for row in c.execute("SELECT name,mac FROM authorized"):
+		authorized_aps.append((row[0], row[1]))
 
-for row in c.execute("SELECT name FROM devices"):
-	t = threading.Thread(target=netifthread, args=(row[0], authorized_aps))
-	threads.append(t)
+	for row in c.execute("SELECT name FROM devices"):
+		t = threading.Thread(target=netifthread, args=(row[0], authorized_aps))
+		threads.append(t)
 
-	t.start()
+		t.start()
 
-if len(threads) == 0:
-	print("No devices defined")
+	if len(threads) == 0:
+		print("No devices defined")
