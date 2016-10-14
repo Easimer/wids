@@ -44,8 +44,8 @@ class IW:
 					t = (parsed.ssid.info, src)
 					if t not in self.authorized:
 						if t not in self.detected:
-							self.authorized.append(t)
-							print("Unauthorized AP detected: " + str(t))
+							self.detected.append(t)
+							print("[netif %s] Unauthorized AP detected: %s" % (self.netif, str(t)))
 		except:
 			print("[netif %s] interrupted, quitting" % self.netif)
 			self.quit = True
