@@ -9,24 +9,28 @@ certificate authority and place them in the keys/ dictionary:
 - keys/cert.pem should be the certificate
 The other way is to generate a self-signed cert. using OpenSSL:
 
-$ openssl req -x509 -newkey rsa:4096 -keyout keys/key.pem -out keys/cert.pem -days 365
+# openssl req -x509 -newkey rsa:4096 -keyout /etc/easiwids/keys/key.pem -out /etc/easiwids/keys/cert.pem -days 365
 
 You may want to strip the PEM password from the key:
 
-$ openssl rsa -in keys/key.pem -out keys/key.pem
+# openssl rsa -in /etc/easiwids/keys/key.pem -out /etc/easiwids/keys/key.pem
+
+Also, make the PEM files readable only by the 'root' user:
+# chown -R root:root /etc/easiwids/keys/
+# chmod -R 600 /etc/easiwids/keys/
 
 The next step is to create some API keys/client keys. The clients will authenticate themselves
-using this key. It's recommended to use the add_key.py script included with this code.
+using this key. It's recommended to use the 'addkey' mode of the server.
 
-$ python2 add_key.py <NAME>
+# python2 server.py addkey <NAME>
 
 This generates a 64 characters long random string including lowercase, uppercase and numerical
 characters and adds it to the database, along with a name to remind you who/what that
 key belongs to.
 
 Now you should add some authorized access points to the server's database. Run the
-add_ap.py script:
-$ python2 add_ap.py <SSID> <MAC ADDRESS>
+server with mode 'addap':
+# python2 server.py addap <SSID> <MAC ADDRESS>
 
 The final step is to set up some clients.
 """
@@ -37,8 +41,12 @@ import json
 from urlparse import urlparse
 import sqlite3
 import urllib
+import sys
+import random
+import string
 
 __apiversion__ = "v1"
+__srvversion__ = "1.0.0"
 
 dbcur = None
 
@@ -176,14 +184,113 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 		self.wfile.write(json.dumps(response))
 		# TODO: log report
 
-httpd = BaseHTTPServer.HTTPServer(('0.0.0.0', 8080), EasiWIDSHTTPHandler)
+if __name__ == "__main__":
 
-dbconn = sqlite3.connect('server.db')
-dbcur = dbconn.cursor()
+	print("EasiWIDS central server (version: %s, API version: %s)" % (__srvversion__, __apiversion__))
 
-dbcur.execute("CREATE TABLE IF NOT EXISTS apikeys(name varchar, key varchar)")
-dbcur.execute("CREATE TABLE IF NOT EXISTS authorized(name varchar, mac varchar)")
+	if len(sys.argv) > 1:
+		mode = sys.argv[1]
+		if mode == "addkey":
+			if len(sys.argv) < 3:
+				print("Usage: %s addkey name" % sys.argv[0])
+				exit()
+			dbconn = sqlite3.connect('/etc/easiwids/server.db')
+			dbcur = dbconn.cursor()
 
-httpd.socket = ssl.wrap_socket(httpd.socket, keyfile='keys/key.pem', certfile='keys/cert.pem', server_side = True, )
+			dbcur.execute("CREATE TABLE IF NOT EXISTS apikeys(name varchar, key varchar)")
 
-httpd.serve_forever()
+			name = sys.argv[1]
+			key = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits + string.ascii_lowercase) for _ in range(64))
+
+			dbcur.execute("INSERT INTO apikeys VALUES(?, ?)", (name, key))
+			dbconn.commit()
+			dbconn.close()
+			print("New key created and stored:\n\tName:\t%s\n\tKey:\t%s" % (name, key))
+			exit()
+		elif mode == "revokekey":
+			if len(sys.argv) < 3:
+				print("Usage: %s revokekey name" % sys.argv[0])
+				exit()
+			dbconn = sqlite3.connect('/etc/easiwids/server.db')
+			dbcur = dbconn.cursor()
+
+			dbcur.execute("CREATE TABLE IF NOT EXISTS apikeys(name varchar, key varchar)")
+
+			name = sys.argv[1]
+
+			dbcur.execute("DELETE FROM apikeys WHERE name=?", (name,))
+			dbconn.commit()
+			dbconn.close()
+		elif mode == "addap":
+			if len(sys.argv) < 4:
+				print("Usage: %s addap ssid mac" % sys.argv[0])
+				exit()
+			dbconn = sqlite3.connect('/etc/easiwids/server.db')
+			dbcur = dbconn.cursor()
+
+			dbcur.execute("CREATE TABLE IF NOT EXISTS authorized(name varchar, key varchar)")
+
+			name = sys.argv[1]
+			mac = sys.argv[2]
+
+			dbcur.execute("INSERT INTO authorized VALUES(?, ?)", (name, mac))
+			dbconn.commit()
+			dbconn.close()
+			print("New authorized AP added:\n\tSSID:\t%s\nMAC:\t%s" % (name, mac))
+			exit()
+		elif mode == "removeap":
+			if len(sys.argv) < 4:
+				print("Usage: %s removeap ssid mac" % sys.argv[0])
+				exit()
+			dbconn = sqlite3.connect('/etc/easiwids/server.db')
+			dbcur = dbconn.cursor()
+
+			dbcur.execute("CREATE TABLE IF NOT EXISTS authorized(name varchar, key varchar)")
+
+			name = sys.argv[1]
+			mac = sys.argv[2]
+
+			dbcur.execute("DELETE FROM authorized WHERE name=? AND mac=?", (name, mac))
+			dbconn.commit()
+			dbconn.close()
+			print("AP removed:\n\tSSID:\t%s\nMAC:\t%s" % (name, mac))
+			exit()
+		elif mode == "listap":
+			dbconn = sqlite3.connect('/etc/easiwids/server.db')
+			dbcur = dbconn.cursor()
+			print("SSID - MAC\n==========")
+			for ap in dbcur.execute("SELECT * FROM authorized;"):
+				print("%s - %s" % (ap[0], ap[1]))
+			dbconn.close()
+			exit()
+		elif mode == "listkey":
+			dbconn = sqlite3.connect('/etc/easiwids/server.db')
+			dbcur = dbconn.cursor()
+			print("ID - Key\n==========")
+			for key in dbcur.execute("SELECT * FROM apikeys;"):
+				print("%s - %s" % (key[0], key[1]))
+			dbconn.close()
+			exit()
+		else:
+			print("Usage: %s [mode] [mode args]" % sys.argv[0])
+			print("If there is a mode provided, the WIDS server will not run.")
+			print("\tModes:")
+			print("\t\taddap - adds an authorized Access Point to the database")
+			print("\t\tremoveap - remove an authorized Access Point from the database")
+			print("\t\tlistap - list authorized Access Points")
+			print("\t\taddkey - adds a client key to the database")
+			print("\t\trevokekey - revokes a client key")
+			print("\t\tlistkey - list client keys")
+			exit()
+
+	httpd = BaseHTTPServer.HTTPServer(('0.0.0.0', 8080), EasiWIDSHTTPHandler)
+
+	dbconn = sqlite3.connect('/etc/easiwids/server.db')
+	dbcur = dbconn.cursor()
+
+	dbcur.execute("CREATE TABLE IF NOT EXISTS apikeys(name varchar, key varchar)")
+	dbcur.execute("CREATE TABLE IF NOT EXISTS authorized(name varchar, mac varchar)")
+
+	httpd.socket = ssl.wrap_socket(httpd.socket, keyfile='/etc/easiwids/keys/key.pem', certfile='/etc/easiwids/keys/cert.pem', server_side = True, )
+
+	httpd.serve_forever()

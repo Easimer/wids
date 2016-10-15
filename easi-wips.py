@@ -8,6 +8,9 @@ import widscfg
 import iw
 import cm
 
+__apiversion__ = "v1"
+__clversion__ = "1.0.0"
+
 threads = []
 interfaces = []
 attacker_pool = []
@@ -49,6 +52,8 @@ def netif_switchch(*args):
 	threading.Timer(0.5, netif_switchch, args=args).start()
 
 if __name__ == "__main__":
+
+	print("EasiWIDS client (version: %s, API version: %s)" % (__clversion__, __apiversion__))
 
 	if not hasattr(widscfg, "devices"):
 		print("No devices are defined")
