@@ -1,33 +1,23 @@
 #!/usr/bin/python3
 
 import http.client
-import urllib.request
+import urllib.parse
 import ssl
 import json
+import widscfg
 
 class ServerClient:
-	def __init__(self, conffile = "/etc/easiwids/client.conf"):
-		self.config = None
-
-		with open("client.conf") as f:
-			try:
-				self.config = json.loads(f.read())
-			except Exception as e:
-				print("Cannot load config: %s" % e)
-
-		for param in ["server", "port", "key", "name"]:
-			if param not in self.config:
-				print("Error: '%s' parameter missing from client.conf" % param)
-				exit()
 
 	def report(self, name, mac): # returns tuple: (bool:SuccessfulConnect, bool:SuccessfulReport, bool:Verdict, str:Message)
-		conn = http.client.HTTPSConnection(self.config["server"], self.config["port"], context = ssl._create_unverified_context())
-		params = urllib.request.urlencode( [ ("key", self.config["key"]), ("name", name), ("mac", mac), ("client", self.config["name"]) ] )
-		#params = urllib.request.urlencode({"key" : self.config["key"], "name" : name, "mac" : mac, "client" : self.config["name"]})
-		conn.request("GET", "/api/v1/announce/?" + params)
+		conn = http.client.HTTPSConnection(widscfg.server, widscfg.port, context = ssl._create_unverified_context())
+		params = urllib.parse.urlencode( [ ("key", widscfg.key), ("name", name), ("mac", mac), ("client", widscfg.name) ] )
+		try:
+			conn.request("GET", "/api/v1/announce/?" + params)
+		except Exception as e:
+			return (False, False, False, str(e))
 		obj = None
 		try:
-			obj = json.loads(conn.getresponse().read())
+			obj = json.loads(conn.getresponse().read().decode('utf-8'))
 			conn.close()
 		except Exception as e:
 			return (False, False, False, str(e))

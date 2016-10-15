@@ -1,0 +1,16 @@
+{
+	"name" : "example",
+	"server" : "wids-central.network.lan",
+	"port" : 8080,
+	"key" : "<KEY GOES HERE>",
+    "devices" : [                  
+            {
+                    "name" : "wlan0",
+                    "offensive" : false
+            },
+            {
+                    "name" : "wlan1",
+                    "offensive" : true
+            }
+    ]
+}
