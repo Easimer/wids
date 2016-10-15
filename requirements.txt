@@ -1,2 +1,1 @@
-dpkt==1.8.8
-pypcap==1.1.5
+scapy-python3==0.18

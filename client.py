@@ -1,7 +1,8 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
+import http.client
+import urllib.request
 import ssl
-import httplib, urllib
 import json
 
 class ServerClient:
@@ -20,8 +21,9 @@ class ServerClient:
 				exit()
 
 	def report(self, name, mac): # returns tuple: (bool:SuccessfulConnect, bool:SuccessfulReport, bool:Verdict, str:Message)
-		conn = httplib.HTTPSConnection(self.config["server"], self.config["port"], context = ssl._create_unverified_context())
-		params = urllib.urlencode({"key" : self.config["key"], "name" : name, "mac" : mac, "client" : self.config["name"]})
+		conn = http.client.HTTPSConnection(self.config["server"], self.config["port"], context = ssl._create_unverified_context())
+		params = urllib.request.urlencode( [ ("key", self.config["key"]), ("name", name), ("mac", mac), ("client", self.config["name"]) ] )
+		#params = urllib.request.urlencode({"key" : self.config["key"], "name" : name, "mac" : mac, "client" : self.config["name"]})
 		conn.request("GET", "/api/v1/announce/?" + params)
 		obj = None
 		try:

@@ -1,78 +1,100 @@
 import subprocess
-import pcap
-import dpkt
 import os
 import time
+
+import scapy.all as sc
+from scapy.layers import dot11 as scl80211
 
 import client
 
 class IW:
-	def __init__(self, netif, authorized):
-		if not netif:
-			return
+	def __init__(self, netif):
 		self.netif = netif
-		self.authorized = authorized
-		self.detected = {}
+		self.netifmon = netif + "mon"
 		self.channel = 1
+		self.detected = {}
+		self.monitor = False
 		self.quit = False
-		self.DEVNULL = open(os.devnull, 'w')
-		if subprocess.call(["airmon-ng", "start", netif], stdout=self.DEVNULL, stderr=self.DEVNULL) != 0:
-			print("[netif %s] cannot set monitor mode" % (self.netif))
-			self.quit = True
-			return
-		else:
-			self.netif += "mon"
 
-		self.set_channel(1)
-
-	def set_channel(self, channel):
-		if subprocess.call(["iw", "dev", self.netif, "set", "channel", str(channel)], stdout=self.DEVNULL, stderr=self.DEVNULL) != 0:
-			print("[netif %s] cannot set channel to %d" % (self.netif, channel))
+	def set_channel(self, channel, monitor = False):
+		if self.channel == channel:
+			return True
+		if monitor and not self.monitor:
 			return False
-		self.channel = channel
-		#print("[netif %s] set channel to %d" % (self.netif, channel))
-		return True
-			
-
-	def loop(self):
 		try:
-			pc = pcap.pcap(self.netif)
-			counter = 0
-			for timestamp, packet in pc:
-				if self.quit:
-					break
-				parsed = None
-				try:
-					parsed = dpkt.radiotap.Radiotap(packet).data
-				except dpkt.dpkt.NeedData:
-					continue
-				if parsed.type == 0 and parsed.subtype == 8:
-					src = ":".join("{:02x}".format(ord(c)) for c in parsed.mgmt.src)
-					t = (parsed.ssid.info, src)
-					ts = "%s-%s" % t
-					if t not in self.authorized:
-						if ts not in self.detected:
-							self.detected[ts] = {
-								"lastseen" : time.time(),
-								"lastreported" : time.time()
-							}
-							print("[netif %s] Unauthorized AP detected: %s" % (self.netif, str(t)))
-							self.report(t[0], src)
-						else:
-							te = self.detected[ts]
-							te["lastseen"] = time.time()
-							if te["lastseen"] - te["lastreported"] > 60:
-								self.report(t[0], src)
-							
-		except KeyboardInterrupt as e:
-			print("[netif %s] signal received, quitting" % (self.netif))
-			self.quit = True
-			self.close()
+			subprocess.run(["iw", "dev", self.netifmon if monitor else self.netif, "set", "channel", str(channel)])
+			self.channel = channel
+			return True
+		except subprocess.CalledProcessError as e:
+			print("[netif %s] Failed to set channel to %s:\n%s" % (self.netif, channel, e.stderr))
+			return False
+
+	def monitor_on(self):
+		if self.monitor:
+			return True
+		try:
+			subprocess.run(["iw", "dev", self.netif, "interface", "add", self.netifmon, "type", "monitor"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			subprocess.run(["ip", "link", "set", self.netifmon, "up"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			self.monitor = True
+			print("[netif %s] monitor on" % self.netif)
+			return True
+		except subprocess.CalledProcessError as e:
+			print("[netif %s] Failed to set monitor mode on:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
+			return False
+
+	def monitor_off(self):
+		if not self.monitor:
+			return True
+		try:
+			subprocess.run(["ip", "link", "set", self.netifmon, "down"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			subprocess.run(["iw", "dev", self.netifmon, "del"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			self.monitor = False
+			print("[netif %s] monitor off" % self.netif)
+			return True
+		except subprocess.CalledProcessError as e:
+			print("[netif %s] Failed to turn off monitor mode:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
+			return False
+
+	def process(self, pkt):
+		p_radiotap = pkt
+		p_80211 = p_radiotap.getlayer(scl80211.Dot11)
+		
+		if not p_80211:
 			return
-			
-	def close(self):
-		if subprocess.call(["airmon-ng", "stop", self.netif], stdout=self.DEVNULL, stderr=self.DEVNULL) != 0:
-			print("[netif %s] cannot deactivate monitor mode" % self.netif)
+		
+		if p_80211.type != 0 and p_80211.subtype != 8:
+			return
+		
+		p_beacon = p_80211.getlayer(scl80211.Dot11Beacon)
+		if not p_beacon:
+			return
+
+		ssid = None
+		mac = None
+		
+		if p_beacon.payload.ID == 0:
+			ssid = p_beacon.payload.info
+		mac = p_80211.addr2
+
+		t = (ssid, mac)
+		ts = "%s-%s" % t
+
+		if ts not in self.detected:
+			self.detected[ts] = {
+				"lastseen" : time.time(),
+				"lastreported" : time.time()
+			}
+			print("[netif %s] Unauthorized AP detected: %s" % (self.netif, str(t)))
+			self.report(t[0], src)
+		else:
+			te = self.detected[ts]
+			te["lastseen"] = time.time()
+			if te["lastseen"] - te["lastreported"] > 60:
+				self.report(t[0], src)
+
+	def scan(self):
+		while not self.quit:
+			sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x), timeout = 1, count = 10)
 
 	def report(self, name, mac):
 		sc = client.ServerClient()
