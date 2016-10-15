@@ -6,12 +6,15 @@ import time
 
 import widscfg
 import iw
+import cm
 
 threads = []
 interfaces = []
+attacker_pool = []
 
 def oninterrupt(signum, frame):
 	print("KEYBOARD INTERRUPT RECEIVED")
+	cm.cleanup()
 	for interface in interfaces:
 		interface.quit = True
 	time.sleep(1.5) # wait for sniffings to stop
@@ -19,7 +22,7 @@ def oninterrupt(signum, frame):
 		if not interface.monitor_off():
 				print("\tFailed to remove monitor of %s" % interface.netif)
 
-def netif_thread(netif):
+def netif_scan_thread(netif):
 	print("[netif %s] thread start" % netif)
 	iwif = iw.IW(netif)
 	iwif.monitor_on()
@@ -54,10 +57,18 @@ if __name__ == "__main__":
 	signal.signal(signal.SIGINT, oninterrupt)
 
 	for dev in widscfg.devices:
-		t = threading.Thread(target=netif_thread, args=(dev,))
-		threads.append(t)
-
-		t.start()
+		if "name" not in dev:
+			continue
+		name = dev["name"]
+		offensive = False
+		if "offensive" in dev:
+			offensive = dev["offensive"]
+		if offensive:
+			cm.add_attacker(name)
+		else:
+			t = threading.Thread(target=netif_scan_thread, args=(dev["name"],))
+			threads.append(t)
+			t.start()
 
 	for thread in threads:
 		thread.join()

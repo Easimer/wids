@@ -6,6 +6,7 @@ import scapy.all as sc
 from scapy.layers import dot11 as scl80211
 
 import client
+import cm
 
 class IW:
 	def __init__(self, netif):
@@ -84,17 +85,39 @@ class IW:
 				"lastseen" : time.time(),
 				"lastreported" : time.time()
 			}
-			print("[netif %s] Unauthorized AP detected: %s" % (self.netif, str(t)))
-			self.report(t[0], src)
+			print("[netif %s] New AP detected: %s" % (self.netif, str(t)))
+			self.report(t[0], mac)
 		else:
 			te = self.detected[ts]
 			te["lastseen"] = time.time()
 			if te["lastseen"] - te["lastreported"] > 60:
-				self.report(t[0], src)
+				self.report(t[0], mac)
+				te["lastreported"] = time.time()
 
 	def scan(self):
 		while not self.quit:
 			sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x), timeout = 1, count = 10)
+
+	def process_client(self, pkt, bssid):
+		self.__clients = []
+		p_radiotap = pkt
+		p_80211 = p_radiotap.getlayer(scl80211.Dot11)
+		if not p_80211:
+			return
+
+		addrs = [p_80211.addr1, p_80211.addr2, p_80211.addr3, p_80211.addr4]
+
+		if bssid in addrs:
+			for addr in addrs:
+				if addr != bssid:
+					if addr not in self.__clients:
+						self.__clients.append(addr)
+
+	def scan_clients(self, bssid):
+		sc.sniff(iface=self.netifmon, prn=lambda x: self.process_client(x, bssid), timeout = 1, count = 50)
+		clients = self.__clients
+		self.__clients = None
+		return clients
 
 	def report(self, name, mac):
 		sc = client.ServerClient()
@@ -106,3 +129,16 @@ class IW:
 
 		if verdict:
 			print("[netif %s] Administering fatal verdict to %s" % (self.netif, name))
+			cm.attack(name, mac)
+
+	def deauth(self, ssid, mac, client="FF:FF:FF:FF:FF:FF"):
+		# AP -> Client
+		p1 = sc.RadioTap()/sc.Dot11(type=0, subtype=12, addr1=client, addr2 = mac,addr3 = mac)/sc.Dot11Deauth(reason=1)
+		# Client -> AP
+		p2 = sc.RadioTap()/sc.Dot11(type=0, subtype=12, addr1=mac, addr2 = client,addr3 = mac)/sc.Dot11Deauth(reason=1)
+
+		# socket (for performance)
+		s = sc.conf.L2socket(iface=self.netifmon)
+		for i in range(100):
+			s.send(p1)
+			s.send(p2)
