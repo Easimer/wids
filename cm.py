@@ -23,11 +23,14 @@ def add_attacker(netif):
 
 	attacker_pool.append(poolentry)
 
-def netif_attack_thread(wif, ssid, mac):
+def netif_attack_thread(wif, ssid, channel, mac):
 	global quit
 	clients = []
 	mode = 0 # 0 = client discovery, 1 = active attack
 
+	print("[netif %s (ATK)] Attacking SSID=%s MAC=%s Channel=%s" % (wif.netif, ssid, mac, channel))
+
+	wif.set_channel(channel)
 	start = time.time()
 	while not quit:
 		if mode == 0:
@@ -59,11 +62,11 @@ def get_interface():
 			minif = dev
 	return minif
 
-def attack(ssid, mac):
+def attack(ssid, channel, mac):
 	wif = get_interface()
 	if not wif:
 		return
-	t = threading.Thread(target=netif_attack_thread, args=(wif["iw"], ssid, mac))
+	t = threading.Thread(target=netif_attack_thread, args=(wif["iw"], ssid, channel, mac))
 	wif["threads"].append(t)
 	t.start()
 

@@ -56,7 +56,7 @@ class IW:
 			print("[netif %s] Failed to turn off monitor mode:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
 			return False
 
-	def process(self, pkt):
+	def process(self, pkt, channel):
 		p_radiotap = pkt
 		p_80211 = p_radiotap.getlayer(scl80211.Dot11)
 		
@@ -86,17 +86,17 @@ class IW:
 				"lastreported" : time.time()
 			}
 			print("[netif %s] New AP detected: %s" % (self.netif, str(t)))
-			self.report(t[0], mac)
+			self.report(t[0], channel, mac)
 		else:
 			te = self.detected[ts]
 			te["lastseen"] = time.time()
 			if te["lastseen"] - te["lastreported"] > 60:
-				self.report(t[0], mac)
+				self.report(t[0], channel, mac)
 				te["lastreported"] = time.time()
 
 	def scan(self):
 		while not self.quit:
-			sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x), timeout = 1, count = 10)
+			sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x, self.channel), timeout = 1, count = 10)
 
 	def process_client(self, pkt, bssid):
 		self.__clients = []
@@ -119,7 +119,7 @@ class IW:
 		self.__clients = None
 		return clients
 
-	def report(self, name, mac):
+	def report(self, name, channel, mac):
 		sc = client.ServerClient()
 		csuc, rsuc, verdict, msg = sc.report(name, mac)
 		if not csuc:
@@ -129,7 +129,7 @@ class IW:
 
 		if verdict:
 			print("[netif %s] Administering fatal verdict to %s" % (self.netif, name))
-			cm.attack(name, mac)
+			cm.attack(name, channel, mac)
 
 	def deauth(self, ssid, mac, client="FF:FF:FF:FF:FF:FF"):
 		# AP -> Client

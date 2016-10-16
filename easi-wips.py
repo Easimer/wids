@@ -9,7 +9,7 @@ import iw
 import cm
 
 __apiversion__ = "v1"
-__clversion__ = "1.0.0"
+__clversion__ = "1.0.1"
 
 threads = []
 interfaces = []
