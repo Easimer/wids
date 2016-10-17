@@ -16,6 +16,7 @@ class IW:
 		self.detected = {}
 		self.monitor = False
 		self.quit = False
+		self.__clients = None
 
 	def set_channel(self, channel, monitor = False):
 		if self.channel == channel:
@@ -57,6 +58,8 @@ class IW:
 			return False
 
 	def process(self, pkt, channel):
+		if self.quit:
+			raise Exception()
 		p_radiotap = pkt
 		p_80211 = p_radiotap.getlayer(scl80211.Dot11)
 		
@@ -74,7 +77,7 @@ class IW:
 		mac = None
 		
 		if p_beacon.payload.ID == 0:
-			ssid = p_beacon.payload.info
+			ssid = p_beacon.payload.info.decode("UTF-8")
 		mac = p_80211.addr2
 
 		t = (ssid, mac)
@@ -95,8 +98,10 @@ class IW:
 				te["lastreported"] = time.time()
 
 	def scan(self):
-		while not self.quit:
-			sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x, self.channel), timeout = 1, count = 10)
+		try:
+			sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x, self.channel))
+		except:
+			return
 
 	def process_client(self, pkt, bssid):
 		self.__clients = []
@@ -144,3 +149,4 @@ class IW:
 		for i in range(100):
 			s.send(p1)
 			s.send(p2)
+		s.close()

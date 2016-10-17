@@ -95,7 +95,7 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 			return
 
 		
-		query = urllib.unquote(url.query)
+		query = urllib.unquote_plus(url.query)
 		query = [elem.split('=') for elem in query.split('&')]
 
 		queryd = {}
