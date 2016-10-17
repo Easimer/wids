@@ -1,0 +1,4 @@
+* make the wireless part stable
+* add rouge DHCP detection
+	* countermeasure: DHCP starvation
+* improve webui
