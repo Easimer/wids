@@ -1,0 +1,2 @@
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="10:fe:ed:17:10:d3", NAME="recon0"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="10:fe:ed:16:67:d9", NAME="sword0"
