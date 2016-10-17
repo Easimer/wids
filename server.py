@@ -44,11 +44,14 @@ import urllib
 import sys
 import random
 import string
+import time
 
 __apiversion__ = "v1"
 __srvversion__ = "1.0.0"
 
 dbcur = None
+reports = []
+clients = []
 
 # authenticates client key
 def auth_key(key):
@@ -107,20 +110,38 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 		if path[2] == "announce":
 			self.announce(queryd)
-		return
+		elif path[2] == "login":
+			self.login(queryd)
+		elif path[2] == "status":
+			self.status(queryd)
+		else:
+			self.send_response(404)
+			self.send_header('Content-Type', 'application/json')
+			self.end_headers()
+			response = {
+				"status" : "ERR",
+				"message" : "Not Found"
+			}
+
+			self.wfile.write(json.dumps(response))
+			return
+
+	def missing_param(self, param):
+		self.send_response(400)
+		self.send_header('Content-Type', 'application/json')
+		self.end_headers()
+		response = {
+			"status" : "ERR",
+			"message" : "Parameter is missing",
+			"parameter" : param
+		}
+		self.wfile.write(json.dumps(response))
 
 	def announce(self, query):
 		# Retrieve and check the API key
 		key = None
 		if not ("key" in query and query["key"]):
-			self.send_response(400)
-			self.send_header('Content-Type', 'application/json')
-			self.end_headers()
-			response = {
-				"status" : "ERR",
-				"message" : "No client key"
-			}
-			self.wfile.write(json.dumps(response))
+			self.missing_param("key")
 			return
 		
 		key = query["key"]
@@ -138,29 +159,13 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 		
 		# Retrieve the SSID
 		if not ("name" in query and query["name"]):
-			self.send_response(400)
-			self.send_header('Content-Type', 'application/json')
-			self.end_headers()
-			response = {
-				"status" : "ERR",
-				"message" : "Parameter is missing",
-				"parameter" : "name"
-			}
-			self.wfile.write(json.dumps(response))
+			self.missing_param("name")
 			return
 		ssid = query["name"]
 
 		# Retrieve MAC address
 		if not ("mac" in query and query["mac"]):
-			self.send_response(400)
-			self.send_header('Content-Type', 'application/json')
-			self.end_headers()
-			response = {
-				"status" : "ERR",
-				"message" : "Parameter is missing",
-				"parameter" : "mac"
-			}
-			self.wfile.write(json.dumps(response))
+			self.missing_param("mac")
 			return
 
 		mac = query["mac"]
@@ -174,15 +179,124 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 			}
 		}
 
+		client = "(unknown)"
+
+		if "client" in query:
+			if query["client"]:
+				client = query["client"]
+			found = False
+			for client in clients:
+				if client[0] == query["client"]:
+					found = True
+			if not found:
+				response["login"] = "REQUIRED"
+
 		self.send_response(200)
 		self.send_header('Content-Type', 'application/json')
 		self.end_headers()
 
-		if not auth_ap(ssid, mac):
+		authorized = auth_ap(ssid, mac)
+
+		if not authorized:
 			response["result"]["verdict"] = "TERMINATE"
 		
 		self.wfile.write(json.dumps(response))
-		# TODO: log report
+		
+		found = False
+		for report in reports:
+			if report[0] == ssid:
+				report[3] = time.time()
+				found = True
+				break
+		if not found:
+			t = [ssid, mac, authorized, time.time(), client]
+			reports.append(t)
+
+	def login(self, query):
+		key = None
+		if not ("key" in query and query["key"]):
+			self.missing_param("key")
+			return
+		
+		key = query["key"]
+
+		if not auth_key(key):
+			self.send_response(403)
+			self.send_header('Content-Type', 'application/json')
+			self.end_headers()
+			response = {
+				"status" : "ERR",
+				"message" : "Unauthorized"
+			}
+			self.wfile.write(json.dumps(response))
+			return
+
+		if not ("name" in query and query["name"]):
+			self.missing_param("name")
+			return
+		if not ("iw" in query and query["iw"]):
+			self.missing_param("iw")
+			return
+
+		name = query["name"]
+		iw = query["iw"].split(' ')
+		found = False
+		for client in clients:
+			if client[0] == name:
+				found = True
+				break
+		if not found:
+			t = (name, iw)
+			clients.append(t)
+
+		response = {
+			"status" : "OK",
+		}
+
+		self.send_response(200)
+		self.send_header('Content-Type', 'application/json')
+		self.end_headers()
+		self.wfile.write(json.dumps(response))
+
+	def status(self, query):
+		key = None
+		if not ("key" in query and query["key"]):
+			self.missing_param("key")
+			return
+		
+		key = query["key"]
+
+		if not auth_key(key):
+			self.send_response(403)
+			self.send_header('Content-Type', 'application/json')
+			self.end_headers()
+			response = {
+				"status" : "ERR",
+				"message" : "Unauthorized"
+			}
+			self.wfile.write(json.dumps(response))
+			return
+
+		status_head_template = "<DOCTYPE !html><html lang='en'><head><meta charset='utf-8'><title>EasiWIDS</title></head>"
+		status_body1_template = "<body><h2>EasiWIDS Status</h2><div><h3>Detected APs</h3><ul>"
+		status_body2_template = "</ul></div><div><h3>Clients</h3><ul>"
+		status_tail_template = "</ul></body></html>"
+		status_ap_template = "<li>__CLIENT__: <span style='color: __COLOR__'>__SSID__ (__MAC__)</span></li>"
+		status_cl_template = "<li>__NAME__: __IWLIST__</li>"
+
+		self.send_response(200)
+		self.send_header('Content-Type', 'text/html')
+		self.end_headers()
+
+		self.wfile.write(status_head_template)
+		self.wfile.write(status_body1_template)
+		for report in reports:
+			self.wfile.write(status_ap_template.replace("__COLOR__", "red" if not report[2] else "black").replace("__SSID__", report[0]).replace("__MAC__", report[1]).replace("__CLIENT__", report[4]))
+		self.wfile.write(status_body2_template)
+		for client in clients:
+			self.wfile.write(status_cl_template.replace("__NAME__", client[0]).replace("__IWLIST__", ', '.join(client[1])))
+		self.wfile.write(status_tail_template)
+
 
 if __name__ == "__main__":
 
