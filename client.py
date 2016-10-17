@@ -41,4 +41,21 @@ class ServerClient:
 		if "message" in obj:
 			message = obj["message"]
 
+		if "login" in obj:
+			if obj["login"] == "REQUIRED":
+				#print("login required")
+				#self.login([dev.name for dev in widscfg.devices])
+				pass
+
 		return (True, True, obj["result"]["verdict"] == "TERMINATE", message)
+
+	def login(self, iwlist):
+		print("attempting login")
+		conn = http.client.HTTPSConnection(widscfg.server, widscfg.port, context = ssl._create_unverified_context())
+		params = urllib.parse.urlencode( [ ("key", widscfg.key), ("name", widscfg.name), ("iw", ' '.join([iw.netif for iw in iwlist]))] )
+		try:
+			conn.request("GET", "/api/v1/login/?" + params)
+			conn.close()
+		except Exception as e:
+			return False
+		return True

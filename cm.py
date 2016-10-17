@@ -11,7 +11,7 @@ quit = False
 
 def add_attacker(netif):
 	global attacker_pool
-	print("[netif %s] adding as attacker interface")
+	print("[netif %s] adding as attacker interface" % netif)
 	iwif = iw.IW(netif)
 	iwif.monitor_on()
 
