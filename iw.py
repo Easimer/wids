@@ -115,7 +115,9 @@ class IW:
 
 	def scan_clients(self, bssid):
 		sc.sniff(iface=self.netifmon, prn=lambda x: self.process_client(x, bssid), timeout = 1, count = 50)
-		clients = self.__clients
+		clients = None
+		if self.__clients:
+			clients = self.__clients
 		self.__clients = None
 		return clients
 

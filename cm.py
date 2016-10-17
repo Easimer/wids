@@ -34,7 +34,9 @@ def netif_attack_thread(wif, ssid, channel, mac):
 	start = time.time()
 	while not quit:
 		if mode == 0:
-			clients = [e for e in (wif.scan_clients(mac) + clients) if e not in clients]
+			sresult = wif.scan_clients(mac)
+			if sresult:
+				clients = [e for e in (sresult + clients) if e not in clients]
 			if time.time() - start > 2:
 				mode = 1
 				start = time.time()
