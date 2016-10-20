@@ -6,9 +6,9 @@ import threading
 import scapy.all as sc
 from scapy.layers import dot11 as scl80211
 
-import client
-import widscfg
-import tasks
+import wids.client as client
+import wids.widscfg as widscfg
+import wids.tasks as tasks
 
 TYPE_RADAR = 1
 TYPE_ATTACK = 2

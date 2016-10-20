@@ -2,3 +2,7 @@ venv/
 *.db
 *.pyc
 *.pem
+build/
+dist/
+easiwids.egg-info/
+easiwidsd.egg-info/

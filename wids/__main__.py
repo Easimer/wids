@@ -5,12 +5,12 @@ import os
 import time
 import sys
 
-import widscfg
-import iw
-import tasks
+import wids.widscfg as widscfg
+import wids.iw as iw
+import wids.tasks as tasks
 
 __apiversion__ = "v1"
-__clversion__ = "1.1.2"
+__clversion__ = "1.1.3"
 
 threads = []
 interfaces = []

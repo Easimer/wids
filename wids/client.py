@@ -4,7 +4,7 @@ import http.client
 import urllib.parse
 import ssl
 import json
-import widscfg
+import wids.widscfg as widscfg
 
 class ServerClient:
 
