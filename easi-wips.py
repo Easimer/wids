@@ -10,7 +10,7 @@ import iw
 import tasks
 
 __apiversion__ = "v1"
-__clversion__ = "1.1.1"
+__clversion__ = "1.1.2"
 
 threads = []
 interfaces = []

