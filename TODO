@@ -2,3 +2,4 @@
 * add rouge DHCP detection
 	* countermeasure: DHCP starvation
 * improve webui
+* CM reentrant lock
