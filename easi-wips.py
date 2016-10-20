@@ -6,11 +6,11 @@ import time
 import sys
 
 import widscfg
-import iwf
+import iw
 import tasks
 
 __apiversion__ = "v1"
-__clversion__ = "1.1.0"
+__clversion__ = "1.1.1"
 
 threads = []
 interfaces = []
