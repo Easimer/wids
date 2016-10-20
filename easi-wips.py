@@ -3,13 +3,14 @@ import threading
 import signal
 import os
 import time
+import sys
 
 import widscfg
-import iw
-import cm
+import iwf
+import tasks
 
 __apiversion__ = "v1"
-__clversion__ = "1.0.1"
+__clversion__ = "1.1.0"
 
 threads = []
 interfaces = []
@@ -17,7 +18,6 @@ attacker_pool = []
 
 def oninterrupt(signum, frame):
 	print("KEYBOARD INTERRUPT RECEIVED")
-	cm.cleanup()
 	for interface in interfaces:
 		interface.quit = True
 	time.sleep(1.5) # wait for sniffings to stop
@@ -25,20 +25,12 @@ def oninterrupt(signum, frame):
 		if not interface.monitor_off():
 				print("\tFailed to remove monitor of %s" % interface.netif)
 
-def netif_scan_thread(netif):
-	print("[netif %s] thread start" % netif)
-	iwif = iw.IW(netif)
+def netif_init(netif, offensive):
+	iwif = iw.IW(netif, iw.TYPE_ATTACK if offensive else iw.TYPE_RADAR)
 	iwif.monitor_on()
-
 	interfaces.append(iwif)
-	
-	timer = threading.Timer(0.250, netif_switchch, args=[iwif])
-	timer.start()
-
-	print("[netif %s] scanning has begun" % netif)
-	iwif.scan()
-
-	timer.cancel()
+	print("[\033[93mnetif \033[91m%s\033[0m] activated" % netif)
+	iwif.loop()
 
 def netif_switchch(*args):
 	iwobj = args[0]
@@ -51,15 +43,29 @@ def netif_switchch(*args):
 		return
 	threading.Timer(0.5, netif_switchch, args=args).start()
 
+def parse_args():
+	args = sys.argv[1:]
+	for arg in args:
+		if arg == "-a":
+			print("arbitrary mode")
+			widscfg.arbitrary = True
+
 if __name__ == "__main__":
 
 	print("EasiWIDS client (version: %s, API version: %s)" % (__clversion__, __apiversion__))
+
+	parse_args()
 
 	if not hasattr(widscfg, "devices"):
 		print("No devices are defined")
 		exit()
 
 	signal.signal(signal.SIGINT, oninterrupt)
+
+	# add ch 1-11 as tasks
+
+	for channel in range(1, 12):
+		tasks.task_add(tasks.Task(target=tuple([channel]), ttype=tasks.TYPE_WIRELESS_STARGET))
 
 	for dev in widscfg.devices:
 		if "name" not in dev:
@@ -68,12 +74,9 @@ if __name__ == "__main__":
 		offensive = False
 		if "offensive" in dev:
 			offensive = dev["offensive"]
-		if offensive:
-			cm.add_attacker(name)
-		else:
-			t = threading.Thread(target=netif_scan_thread, args=(dev["name"],))
-			threads.append(t)
-			t.start()
+		t = threading.Thread(target=netif_init, args=(dev["name"],offensive))
+		threads.append(t)
+		t.start()
 
 	for thread in threads:
 		thread.join()

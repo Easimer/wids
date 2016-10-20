@@ -1,15 +1,29 @@
 import subprocess
 import os
 import time
+import threading
 
 import scapy.all as sc
 from scapy.layers import dot11 as scl80211
 
 import client
-import cm
+import widscfg
+import tasks
+
+TYPE_RADAR = 1
+TYPE_ATTACK = 2
+
+ap_list = []
+
+# ap = (
+#	ssid = "",
+#	channel = n,
+#	bssid = "",
+#	clients = ["00:11:22:33:44:55"]
+# )
 
 class IW:
-	def __init__(self, netif):
+	def __init__(self, netif, iftype = TYPE_RADAR):
 		self.netif = netif
 		self.netifmon = netif + "mon"
 		self.channel = 1
@@ -17,6 +31,9 @@ class IW:
 		self.monitor = False
 		self.quit = False
 		self.__clients = None
+		self.type = iftype
+		self.task = None
+		self.lasttask = None
 
 	def set_channel(self, channel, monitor = False):
 		if self.channel == channel:
@@ -28,7 +45,7 @@ class IW:
 			self.channel = channel
 			return True
 		except subprocess.CalledProcessError as e:
-			print("[netif %s] Failed to set channel to %s:\n%s" % (self.netif, channel, e.stderr))
+			print("[\033[93mnetif \033[91m%s\033[0m] Failed to set channel to %s:\n%s" % (self.netif, channel, e.stderr))
 			return False
 
 	def monitor_on(self):
@@ -38,10 +55,10 @@ class IW:
 			subprocess.run(["iw", "dev", self.netif, "interface", "add", self.netifmon, "type", "monitor"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			subprocess.run(["ip", "link", "set", self.netifmon, "up"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			self.monitor = True
-			print("[netif %s] monitor on" % self.netif)
+			print("[\033[93mnetif \033[91m%s\033[0m] monitor on" % self.netif)
 			return True
 		except subprocess.CalledProcessError as e:
-			print("[netif %s] Failed to set monitor mode on:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
+			print("[\033[93mnetif \033[91m%s\033[0m] Failed to set monitor mode on:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
 			return False
 
 	def monitor_off(self):
@@ -51,10 +68,10 @@ class IW:
 			subprocess.run(["ip", "link", "set", self.netifmon, "down"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			subprocess.run(["iw", "dev", self.netifmon, "del"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			self.monitor = False
-			print("[netif %s] monitor off" % self.netif)
+			print("[\033[93mnetif \033[91m%s\033[0m] monitor off" % self.netif)
 			return True
 		except subprocess.CalledProcessError as e:
-			print("[netif %s] Failed to turn off monitor mode:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
+			print("[\033[93mnetif \033[91m%s\033[0m] Failed to turn off monitor mode:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
 			return False
 
 	def process(self, pkt, channel):
@@ -65,7 +82,16 @@ class IW:
 		
 		if not p_80211:
 			return
-		
+
+		addrs = [p_80211.addr1, p_80211.addr2, p_80211.addr3, p_80211.addr4]
+		if p_80211.type == 2: # data frame
+			for ap in ap_list:
+				if ap[2] in addrs:
+					for addr in addrs:
+						if addr != ap[2]:
+							ap[3].append(addr)
+			return
+
 		if p_80211.type != 0 and p_80211.subtype != 8:
 			return
 		
@@ -88,7 +114,7 @@ class IW:
 				"lastseen" : time.time(),
 				"lastreported" : time.time()
 			}
-			print("[netif %s] New AP detected: %s" % (self.netif, str(t)))
+			print("[\033[93mnetif \033[91m%s\033[0m] New AP detected: %s" % (self.netif, str(t)))
 			self.report(t[0], channel, mac)
 		else:
 			te = self.detected[ts]
@@ -97,46 +123,103 @@ class IW:
 				self.report(t[0], channel, mac)
 				te["lastreported"] = time.time()
 
-	def scan(self):
-		try:
-			sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x, self.channel))
-		except:
-			return
+	def request_task(self, task, i):
+		if self.type == TYPE_ATTACK and task.type == tasks.TYPE_WIRELESS_ATARGET:
+			if task.acquire(): # if task is not locked by another device, lock it
+				return False
+			else:
+				self.task = task # and set is as the task
+				self.lasttask = i
+				return True
+		if self.type == TYPE_RADAR and task.type == tasks.TYPE_WIRELESS_STARGET:
+			if task.acquire():
+				return False
+			else:
+				self.task = task
+				self.lasttask = i
+				return True
 
-	def process_client(self, pkt, bssid):
-		self.__clients = []
-		p_radiotap = pkt
-		p_80211 = p_radiotap.getlayer(scl80211.Dot11)
-		if not p_80211:
-			return
+	def loop(self):
+		global ap_list
+		start = time.time()
+		stage = 0 # 0 - 
+		tap = None
+		while not self.quit:
+			if not self.task:
+				foundlasttask = False
+				for i in range(len(tasks.tasks) + 1):
+					if i == len(tasks.tasks):
+						self.lasttask = 0
+						if self.request_task(tasks.tasks[0], 0):
+							start = time.time()
+						break
 
-		addrs = [p_80211.addr1, p_80211.addr2, p_80211.addr3, p_80211.addr4]
+					task = tasks.tasks[i]
+					if not self.lasttask:
+						foundlasttask = True
+					if i == self.lasttask:
+						foundlasttask = True
+						continue
+					if not foundlasttask:
+						continue
+					if self.request_task(task, i):
+						start = time.time()
+						break
+					else:
+						continue
+			else:
+				if self.type == TYPE_ATTACK:
+					if self.channel != self.task.target[1]:
+						self.set_channel(self.task.target[1])
 
-		if bssid in addrs:
-			for addr in addrs:
-				if addr != bssid:
-					if addr not in self.__clients:
-						self.__clients.append(addr)
+					if not tap:
+						for ap in ap_list:
+							if ap[0] == self.task.target[0] and ap[2] == self.task.target[2]:
+								tap = ap
+								break
 
-	def scan_clients(self, bssid):
-		sc.sniff(iface=self.netifmon, prn=lambda x: self.process_client(x, bssid), timeout = 1, count = 50)
-		clients = None
-		if self.__clients:
-			clients = self.__clients
-		self.__clients = None
-		return clients
+					# broadcast method
+					self.deauth(self.task.target[0], self.task.target[2])
+
+					# addressed method
+					if tap:
+						for client in tap[3]:
+							self.deauth(self.task.target[0], self.task.target[2], client)
+
+					if time.time() - start > 0.5:
+						self.task.unlock()
+						self.task = None
+
+				elif self.type == TYPE_RADAR:
+					if self.channel != self.task.target[0]:
+						self.set_channel(self.task.target[0])
+					try:
+						sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x, self.channel), count=25, timeout=1)
+					except:
+						pass
+					if time.time() - start > 0.5:
+						self.task.unlock()
+						self.task = None
 
 	def report(self, name, channel, mac):
 		sc = client.ServerClient()
 		csuc, rsuc, verdict, msg = sc.report(name, mac)
 		if not csuc:
-			print("[netif %s] Cannot connect to server: %s" % (self.netif, msg))
+			print("[\033[93mnetif \033[91m%s\033[0m] Cannot connect to server: %s" % (self.netif, msg))
 		elif not rsuc:
-			print("[netif %s] Cannot report to server: %s" % (self.netif, msg))
+			print("[\033[93mnetif \033[91m%s\033[0m] Cannot report to server: %s" % (self.netif, msg))
 
 		if verdict:
-			print("[netif %s] Administering fatal verdict to %s" % (self.netif, name))
-			cm.attack(name, channel, mac)
+			print("[\033[93mnetif \033[91m%s\033[0m] Queueing attack of %s" % (self.netif, name))
+			tasks.task_add(tasks.Task(target=(name, channel, mac), ttype=tasks.TYPE_WIRELESS_ATARGET))
+			global ap_list
+			ape = None
+			for ap in ap_list:
+				if ap[0] == name and ap[1] == mac:
+					ape = ap
+					break
+			if not ape:
+				ap_list.append((name, channel, mac, []))
 
 	def deauth(self, ssid, mac, client="FF:FF:FF:FF:FF:FF"):
 		# AP -> Client

@@ -9,6 +9,8 @@ import widscfg
 class ServerClient:
 
 	def report(self, name, mac): # returns tuple: (bool:SuccessfulConnect, bool:SuccessfulReport, bool:Verdict, str:Message)
+		if widscfg.arbitrary:
+			return (True, True, True, "Arbitrary")
 		conn = http.client.HTTPSConnection(widscfg.server, widscfg.port, context = ssl._create_unverified_context())
 		params = urllib.parse.urlencode( [ ("key", widscfg.key), ("name", name), ("mac", mac), ("client", widscfg.name) ] )
 		try:
