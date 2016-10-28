@@ -25,6 +25,11 @@ def oninterrupt(signum, frame):
 		if not interface.monitor_off():
 				print("\tFailed to remove monitor of %s" % interface.netif)
 
+def usr1(signum, frame):
+	print("== TASKS DUMP ==")
+	for task in tasks.tasks:
+		print("Task - Type: %d | Target: %s" % (task.type, task.target))
+
 def netif_init(netif, offensive):
 	iwif = iw.IW(netif, iw.TYPE_ATTACK if offensive else iw.TYPE_RADAR)
 	iwif.monitor_on()
@@ -61,6 +66,7 @@ if __name__ == "__main__":
 		exit()
 
 	signal.signal(signal.SIGINT, oninterrupt)
+	signal.signal(signal.SIGUSR1, usr1)
 
 	# add ch 1-11 as tasks
 

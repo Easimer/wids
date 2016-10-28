@@ -46,6 +46,7 @@ class IW:
 			return False
 		try:
 			ipiw_lock.acquire()
+			print("[\033[93mnetif \033[91m%s\33[0m] setting channel" % (self.netif))
 			subprocess.run(["iw", "dev", self.netifmon if monitor else self.netif, "set", "channel", str(channel)])
 			ipiw_lock.release()
 			self.channel = channel
@@ -60,7 +61,9 @@ class IW:
 			return True
 		try:
 			ipiw_lock.acquire()
+			print("[\033[93mnetif \033[91m%s\33[0m] creating monitor interface" % (self.netif))
 			subprocess.run(["iw", "dev", self.netif, "interface", "add", self.netifmon, "type", "monitor"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			print("[\033[93mnetif \033[91m%s\33[0m] bringing monitor up" % (self.netif))
 			subprocess.run(["ip", "link", "set", self.netifmon, "up"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			ipiw_lock.release()
 			self.monitor = True
@@ -76,7 +79,10 @@ class IW:
 			return True
 		try:
 			ipiw_lock.acquire()
+			print("[\033[93mnetif \033[91m%s\33[0m] bringing monitor down" % (self.netif))
 			subprocess.run(["ip", "link", "set", self.netifmon, "down"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			print("[\033[93mnetif \033[91m%s\33[0m] deleting monitor" % (self.netif))
+			time.sleep(0.25) # wait for ip to bring the if fully down
 			subprocess.run(["iw", "dev", self.netifmon, "del"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			ipiw_lock.release()
 			self.monitor = False
@@ -143,6 +149,7 @@ class IW:
 			else:
 				self.task = task # and set is as the task
 				self.lasttask = task
+				print("[\033[93mnetif \033[91m%s\033[0m] Attack task acquired: %s" % (self.netif, self.task.target))
 				return True
 		if self.type == TYPE_RADAR and task.type == tasks.TYPE_WIRELESS_STARGET:
 			if task.acquire():
