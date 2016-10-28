@@ -2,6 +2,7 @@ import subprocess
 import os
 import time
 import threading
+from itertools import cycle
 
 import scapy.all as sc
 from scapy.layers import dot11 as scl80211
@@ -22,6 +23,8 @@ ap_list = []
 #	clients = ["00:11:22:33:44:55"]
 # )
 
+ipiw_lock = threading.Lock()
+
 class IW:
 	def __init__(self, netif, iftype = TYPE_RADAR):
 		self.netif = netif
@@ -36,12 +39,15 @@ class IW:
 		self.lasttask = None
 
 	def set_channel(self, channel, monitor = False):
+		global ipiw_lock
 		if self.channel == channel:
 			return True
 		if monitor and not self.monitor:
 			return False
 		try:
+			ipiw_lock.acquire()
 			subprocess.run(["iw", "dev", self.netifmon if monitor else self.netif, "set", "channel", str(channel)])
+			ipiw_lock.release()
 			self.channel = channel
 			return True
 		except subprocess.CalledProcessError as e:
@@ -49,11 +55,14 @@ class IW:
 			return False
 
 	def monitor_on(self):
+		global ipiw_lock
 		if self.monitor:
 			return True
 		try:
+			ipiw_lock.acquire()
 			subprocess.run(["iw", "dev", self.netif, "interface", "add", self.netifmon, "type", "monitor"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			subprocess.run(["ip", "link", "set", self.netifmon, "up"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			ipiw_lock.release()
 			self.monitor = True
 			print("[\033[93mnetif \033[91m%s\033[0m] monitor on" % self.netif)
 			return True
@@ -62,11 +71,14 @@ class IW:
 			return False
 
 	def monitor_off(self):
+		global ipiw_lock
 		if not self.monitor:
 			return True
 		try:
+			ipiw_lock.acquire()
 			subprocess.run(["ip", "link", "set", self.netifmon, "down"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 			subprocess.run(["iw", "dev", self.netifmon, "del"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			ipiw_lock.release()
 			self.monitor = False
 			print("[\033[93mnetif \033[91m%s\033[0m] monitor off" % self.netif)
 			return True
@@ -124,20 +136,20 @@ class IW:
 				self.report(t[0], channel, mac)
 				te["lastreported"] = time.time()
 
-	def request_task(self, task, i):
+	def request_task(self, task):
 		if self.type == TYPE_ATTACK and task.type == tasks.TYPE_WIRELESS_ATARGET:
 			if task.acquire(): # if task is not locked by another device, lock it
 				return False
 			else:
 				self.task = task # and set is as the task
-				self.lasttask = i
+				self.lasttask = task
 				return True
 		if self.type == TYPE_RADAR and task.type == tasks.TYPE_WIRELESS_STARGET:
 			if task.acquire():
 				return False
 			else:
 				self.task = task
-				self.lasttask = i
+				self.lasttask = task
 				return True
 
 	def loop(self):
@@ -148,22 +160,18 @@ class IW:
 		while not self.quit:
 			if not self.task:
 				foundlasttask = False
-				for i in range(len(tasks.tasks) + 1):
-					if i == len(tasks.tasks):
-						self.lasttask = 0
-						if self.request_task(tasks.tasks[0], 0):
-							start = time.time()
+				iterator = cycle(tasks.tasks)
+				for task in iterator:
+					if self.quit:
 						break
-
-					task = tasks.tasks[i]
 					if not self.lasttask:
 						foundlasttask = True
-					if i == self.lasttask:
+					if task == self.lasttask:
 						foundlasttask = True
 						continue
 					if not foundlasttask:
 						continue
-					if self.request_task(task, i):
+					if self.request_task(task):
 						start = time.time()
 						break
 					else:
