@@ -25,8 +25,11 @@ ap_list = []
 
 ipiw_lock = threading.Lock()
 
+logfile = None
+
 class IW:
 	def __init__(self, netif, iftype = TYPE_RADAR):
+		global logfile
 		self.netif = netif
 		self.netifmon = netif + "mon"
 		self.channel = 1
@@ -37,6 +40,8 @@ class IW:
 		self.type = iftype
 		self.task = None
 		self.lasttask = None
+		if not logfile:
+			logfile = open("ipiwlog.txt", "a")
 
 	def set_channel(self, channel, monitor = False):
 		global ipiw_lock
@@ -47,7 +52,7 @@ class IW:
 		try:
 			ipiw_lock.acquire()
 			print("[\033[93mnetif \033[91m%s\33[0m] setting channel" % (self.netif))
-			subprocess.run(["iw", "dev", self.netifmon if monitor else self.netif, "set", "channel", str(channel)])
+			subprocess.run(["iw", "dev", self.netifmon if monitor else self.netif, "set", "channel", str(channel)], stdout=logfile, stderr = subprocess.PIPE, check=True)
 			ipiw_lock.release()
 			self.channel = channel
 			return True
@@ -62,9 +67,9 @@ class IW:
 		try:
 			ipiw_lock.acquire()
 			print("[\033[93mnetif \033[91m%s\33[0m] creating monitor interface" % (self.netif))
-			subprocess.run(["iw", "dev", self.netif, "interface", "add", self.netifmon, "type", "monitor"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			subprocess.run(["iw", "dev", self.netif, "interface", "add", self.netifmon, "type", "monitor"], stdout=logfile, stderr = subprocess.PIPE, check=True)
 			print("[\033[93mnetif \033[91m%s\33[0m] bringing monitor up" % (self.netif))
-			subprocess.run(["ip", "link", "set", self.netifmon, "up"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			subprocess.run(["ip", "link", "set", self.netifmon, "up"], stdout=logfile, stderr = subprocess.PIPE, check=True)
 			ipiw_lock.release()
 			self.monitor = True
 			print("[\033[93mnetif \033[91m%s\033[0m] monitor on" % self.netif)
@@ -73,18 +78,20 @@ class IW:
 			print("[\033[93mnetif \033[91m%s\033[0m] Failed to set monitor mode on:\n%s\nFailed command: %s" % (self.netif, e.stderr, ' '.join(e.args[1])))
 			return False
 
-	def monitor_off(self):
+	def monitor_off(self, force=False):
 		global ipiw_lock
 		if not self.monitor:
 			return True
 		try:
-			ipiw_lock.acquire()
+			if not force:
+				ipiw_lock.acquire()
 			print("[\033[93mnetif \033[91m%s\33[0m] bringing monitor down" % (self.netif))
-			subprocess.run(["ip", "link", "set", self.netifmon, "down"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+			subprocess.run(["ip", "link", "set", self.netifmon, "down"], stdout=logfile, stderr = subprocess.PIPE, check=True)
 			print("[\033[93mnetif \033[91m%s\33[0m] deleting monitor" % (self.netif))
 			time.sleep(0.25) # wait for ip to bring the if fully down
-			subprocess.run(["iw", "dev", self.netifmon, "del"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-			ipiw_lock.release()
+			subprocess.run(["iw", "dev", self.netifmon, "del"], stdout=logfile, stderr = subprocess.PIPE, check=True)
+			if not force:
+				ipiw_lock.release()
 			self.monitor = False
 			print("[\033[93mnetif \033[91m%s\033[0m] monitor off" % self.netif)
 			return True
@@ -161,6 +168,7 @@ class IW:
 
 	def loop(self):
 		global ap_list
+		global ipiw_lock
 		start = time.time()
 		stage = 0 # 0 - 
 		tap = None
@@ -210,7 +218,9 @@ class IW:
 					if self.channel != self.task.target[0]:
 						self.set_channel(self.task.target[0])
 					try:
+						ipiw_lock.acquire()
 						sc.sniff(iface=self.netifmon, prn=lambda x: self.process(x, self.channel), count=25, timeout=1)
+						ipiw_lock.release()
 					except:
 						pass
 					if time.time() - start > 0.5:
@@ -238,6 +248,8 @@ class IW:
 				ap_list.append((name, channel, mac, []))
 
 	def deauth(self, ssid, mac, client="FF:FF:FF:FF:FF:FF"):
+		global ipiw_lock
+		ipiw_lock.acquire()
 		# AP -> Client
 		p1 = sc.RadioTap()/sc.Dot11(type=0, subtype=12, addr1=client, addr2 = mac,addr3 = mac)/sc.Dot11Deauth(reason=5) # reason = "AP cannot handle this many stations"
 		# Client -> AP
@@ -249,3 +261,4 @@ class IW:
 			s.send(p1)
 			s.send(p2)
 		s.close()
+		ipiw_lock.release()

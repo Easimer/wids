@@ -20,10 +20,15 @@ def oninterrupt(signum, frame):
 	print("KEYBOARD INTERRUPT RECEIVED")
 	for interface in interfaces:
 		interface.quit = True
+	print("signalled interfaces to quit")
 	time.sleep(1.5) # wait for sniffings to stop
+	print("removing monitors")
 	for interface in interfaces:
-		if not interface.monitor_off():
+		if not interface.monitor_off(force=True):
 				print("\tFailed to remove monitor of %s" % interface.netif)
+	if iw.logfile:
+		iw.logfile.close()
+		iw.logfile = None
 
 def usr1(signum, frame):
 	print("== TASKS DUMP ==")

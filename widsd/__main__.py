@@ -204,7 +204,7 @@ class EasiWIDSHTTPHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 		
 		found = False
 		for report in reports:
-			if report[0] == ssid:
+			if report[0] == ssid and report[1] == mac:
 				report[3] = time.time()
 				found = True
 				break
